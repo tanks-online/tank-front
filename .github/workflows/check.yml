@@ -1,0 +1,27 @@
+name: Check game
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+      - run: npm run setup
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_SERVER_URL: wss://example.invalid/ws
+# Cloudflare Pages performs the real publication from this same repository.
+# example.invalid is for build validation only and is never a deployed game URL.
