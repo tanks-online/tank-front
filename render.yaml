@@ -1,0 +1,24 @@
+# One free service. No disks, databases, paid instances, or extra workers.
+services:
+  - type: web
+    name: tank-front-server
+    runtime: node
+    plan: free
+    buildCommand: npm run setup && npm run build:hosted
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: NPM_CONFIG_INCLUDE
+        value: dev
+      - key: VITE_SERVER_URL
+        value: /ws
+      - key: STATIC_DIR
+        value: ../client/dist
+# The server permits the origin of Render's managed RENDER_EXTERNAL_URL.
+# A separate client can still be permitted using explicit ALLOWED_ORIGINS.
+# PORT is assigned by Render; the server listens on 0.0.0.0.

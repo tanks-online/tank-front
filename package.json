@@ -1,0 +1,17 @@
+{
+  "name": "tank-front",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.14.0" },
+  "scripts": {
+    "setup": "npm --prefix client ci && npm --prefix server ci",
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "build:hosted": "node scripts/build-hosted.mjs",
+    "start": "npm --prefix server start",
+    "test": "npm --prefix server test && npm --prefix client run check",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "verify:remote": "node scripts/verify-remote.mjs"
+  }
+}
