@@ -8,6 +8,7 @@ dist/
 .wrangler/
 .vscode/
 coverage/
+.release/
 *.pem
 *.key
 
