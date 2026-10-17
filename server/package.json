@@ -1,0 +1,23 @@
+{
+  "name": "@tank-front/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --max-old-space-size=192 --env-file-if-exists=.env dist/index.js",
+    "dev": "tsc -p tsconfig.json && node --max-old-space-size=192 --env-file-if-exists=.env dist/index.js",
+    "test": "tsc -p tsconfig.json && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.6",
+    "@types/ws": "8.18.1",
+    "typescript": "5.9.3"
+  }
+}
