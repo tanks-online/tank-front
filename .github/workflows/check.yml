@@ -20,8 +20,6 @@ jobs:
             server/package-lock.json
       - run: npm run setup
       - run: npm test
-      - run: npm run build
-        env:
-          VITE_SERVER_URL: wss://example.invalid/ws
-# Cloudflare Pages performs the real publication from this same repository.
-# example.invalid is for build validation only and is never a deployed game URL.
+      - run: npm run build:hosted
+# Check the same client/server build used by Render and the Enzonic runtime.
+# Publication instructions and verified addresses are in docs/TWO-HOSTS.md.
