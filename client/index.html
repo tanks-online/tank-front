@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#172325" />
+  <meta name="description" content="Танковые онлайн-бои для 2–8 игроков. Введите ник и играйте с друзьями. Без регистрации и ботов." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>Танковый фронт — играть онлайн</title>
+</head>
+<body>
+  <div id="app">
+    <section id="lobby" class="simple-lobby">
+      <main class="menu-card">
+        <div class="menu-icon" aria-hidden="true">ТФ</div>
+        <span class="eyebrow">ОНЛАЙН-АРЕНА · 2–8 ИГРОКОВ</span>
+        <h1>Танковый фронт</h1>
+        <p class="menu-intro">Введи ник. Выезжай на арену.</p>
+        <label class="field-label" for="nickname">ТВОЙ НИК</label>
+        <input id="nickname" maxlength="16" autocomplete="nickname" placeholder="Танкист" value="Танкист" />
+        <button id="play" class="primary-button">Играть <span>↗</span></button>
+        <button id="cancel-invite" class="text-button" hidden>Играть в другой комнате</button>
+        <p id="play-note" class="menu-note" role="status">Автоматически найдём комнату. Бой начнётся от двух игроков.</p>
+        <button id="settings-open" class="text-button menu-settings">⚙ Настройки и выбор танка</button>
+        <div class="menu-controls"><span><kbd>WASD</kbd> движение</span><span><kbd>МЫШЬ</kbd> прицел</span><span><kbd>ЛКМ</kbd> огонь</span></div>
+        <p class="menu-footnote">Только настоящие игроки. Без регистрации и ботов.</p>
+      </main>
+    </section>
+    <section id="game" hidden>
+      <div id="battle-scene"></div>
+      <header class="game-top"><div class="game-brand"><b>ТФ</b><span>ПЕСЧАНОЕ ДЕПО<br><small id="room-label"></small></span></div><div class="match-clock"><span id="phase-label">ОЖИДАНИЕ</span><b id="timer">03:00</b></div><div class="game-actions"><span id="ping">— мс</span><button id="invite" class="secondary-button">Пригласить ↗</button><button id="game-settings" class="icon-button" aria-label="Настройки">⚙</button><button id="leave" class="icon-button" aria-label="Покинуть комнату">✕</button></div></header>
+      <div id="game-status" class="game-status" role="status"></div>
+      <div id="waiting" class="center-banner"><span class="eyebrow">ВЫ НА АРЕНЕ</span><h2>Ждём второго игрока</h2><p>Отправь ссылку другу — бой начнётся автоматически.</p><button id="invite-center" class="primary-button">Скопировать приглашение ↗</button></div>
+      <div id="respawn" class="respawn-banner" hidden></div>
+      <aside class="scoreboard"><span class="eyebrow">ТАБЛИЦА БОЯ</span><div class="score-heading"><span>ПОЗЫВНОЙ</span><span>У / С</span></div><div id="scores"></div></aside>
+      <div class="hud-bottom"><div class="health-card"><span id="my-tank">БАСТИОН</span><b id="health-value">110 <small>/ 110</small></b><div class="health-track"><i id="health-bar"></i></div></div><div class="control-hint"><span><kbd>WASD</kbd> движение</span><span><kbd>ЛКМ</kbd> огонь</span><span><kbd>TAB</kbd> таблица</span></div><div class="my-score"><b id="kill-count">0</b><span>УНИЧТОЖЕНО</span></div></div>
+      <div id="results" class="modal-shade" hidden><div class="results-card"><span class="eyebrow">МАТЧ ЗАВЕРШЁН</span><h2 id="winner">Результаты боя</h2><p>Песчаное депо · Каждый за себя</p><div id="final-scores"></div><button id="restart" class="primary-button">Ещё один бой ↗</button><button id="results-leave" class="text-button">В главное меню</button></div></div>
+    </section>
+    <dialog id="settings"><div class="dialog-head"><h2>Настройки</h2><button id="settings-close" class="icon-button" aria-label="Закрыть настройки">✕</button></div><label class="setting-row">Танк для следующего входа <select id="tank-select"><option value="scout">Стриж · лёгкий</option><option value="medium">Бастион · средний</option><option value="heavy">Молот · тяжёлый</option></select></label><p id="tank-info" class="subtle"></p><label class="setting-row">Звуки боя <input type="checkbox" id="sound" /></label><label class="setting-row">Качество графики <select id="quality"><option value="high">Высокое — с тенями</option><option value="low">Низкое — быстрее</option></select></label><p class="subtle">Ник и настройки сохраняются в этом браузере.</p></dialog>
+    <div id="toast" role="status" hidden></div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
