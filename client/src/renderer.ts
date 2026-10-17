@@ -55,7 +55,9 @@ export class TankRenderer {
   private readonly materials = new Set<THREE.Material>();
   private readonly textures = new Set<THREE.Texture>();
   private readonly raycaster = new THREE.Raycaster();
-  private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  // Aim on the shell's flight plane so the cursor and barrel agree at every zoom.
+  private readonly aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.92);
+  private readonly aimReticle = new THREE.Group();
   private readonly mouse = new THREE.Vector2();
   private readonly aimPoint = new THREE.Vector3();
   private readonly focus = new THREE.Vector3();
@@ -72,6 +74,10 @@ export class TankRenderer {
   private lastFrame = 0;
   private elapsed = 0;
   private pointerPresent = false;
+  private localAim?: number;
+  private zoom = 1;
+  private targetZoom = 1;
+  private snapCamera = false;
   private quality: 'low' | 'high' = 'high';
   private preview = false;
   private disposed = false;
@@ -104,6 +110,7 @@ export class TankRenderer {
     this.scene.add(this.sun, this.sun.target, this.tankLayer, this.coverLayer);
     this.buildArena();
     this.buildCover(COVER);
+    this.buildReticle();
     this.camera.position.set(0, 59, 46);
     this.camera.lookAt(0, 0, 0);
     this.resizeObserver = new ResizeObserver(this.resize);
@@ -113,6 +120,7 @@ export class TankRenderer {
     this.renderer.domElement.addEventListener('pointerdown', this.pointerDown);
     this.renderer.domElement.addEventListener('pointerleave', this.pointerLeave);
     this.renderer.domElement.addEventListener('contextmenu', this.contextMenu);
+    this.renderer.domElement.addEventListener('wheel', this.wheel, { passive: false });
     window.addEventListener('pointerup', this.pointerUp);
     window.addEventListener('blur', this.pointerUp);
     this.raf = requestAnimationFrame(this.frame);
@@ -120,6 +128,10 @@ export class TankRenderer {
 
   update(state: GameState, playerId: string): void {
     const changedIdentity = this.playerId !== playerId;
+    if (changedIdentity) {
+      this.localAim = undefined;
+      this.snapCamera = Boolean(playerId);
+    }
     this.playerId = playerId;
     this.state = state;
     this.preview = !playerId && !state.room && state.players.length > 0;
@@ -155,6 +167,7 @@ export class TankRenderer {
         if (!visual.player.alive && player.alive) {
           visual.root.position.set(player.x, 0, player.z);
           visual.root.rotation.y = player.angle;
+          if (player.id === playerId) this.snapCamera = true;
         }
         visual.player = player;
       }
@@ -215,6 +228,7 @@ export class TankRenderer {
     this.renderer.domElement.removeEventListener('pointerdown', this.pointerDown);
     this.renderer.domElement.removeEventListener('pointerleave', this.pointerLeave);
     this.renderer.domElement.removeEventListener('contextmenu', this.contextMenu);
+    this.renderer.domElement.removeEventListener('wheel', this.wheel);
     window.removeEventListener('pointerup', this.pointerUp);
     window.removeEventListener('blur', this.pointerUp);
     this.onFire(false);
@@ -248,15 +262,34 @@ export class TankRenderer {
     event.preventDefault();
   };
   private readonly pointerUp = (): void => { this.onFire(false); };
-  private readonly pointerLeave = (): void => { this.pointerPresent = false; this.onFire(false); };
+  private readonly pointerLeave = (): void => { this.pointerPresent = false; this.aimReticle.visible = false; this.onFire(false); };
   private readonly contextMenu = (event: Event): void => { event.preventDefault(); };
+  private readonly wheel = (event: WheelEvent): void => {
+    if (!this.playerId || !this.state) return;
+    event.preventDefault();
+    const units = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.container.clientHeight : 1;
+    const delta = clamp(event.deltaY * units, -140, 140);
+    this.targetZoom = clamp(this.targetZoom * Math.exp(delta * 0.0014), 0.72, 1.4);
+  };
 
   private updateAim(): void {
     const tank = this.tanks.get(this.playerId);
-    if (!this.pointerPresent || !tank || !tank.player.alive) return;
+    this.aimReticle.visible = Boolean(this.pointerPresent && tank?.player.alive && this.state?.phase !== 'ended');
+    if (!this.aimReticle.visible || !tank) return;
+    this.camera.updateMatrixWorld();
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    if (this.raycaster.ray.intersectPlane(this.groundPlane, this.aimPoint)) {
-      this.onAim(Math.atan2(this.aimPoint.x - tank.root.position.x, this.aimPoint.z - tank.root.position.z));
+    if (this.raycaster.ray.intersectPlane(this.aimPlane, this.aimPoint)) {
+      const dx = this.aimPoint.x - tank.root.position.x;
+      const dz = this.aimPoint.z - tank.root.position.z;
+      // Avoid a 180 degree flip when the cursor passes through the tank itself.
+      if (dx * dx + dz * dz > 0.16) {
+        this.localAim = Math.atan2(dx, dz);
+        this.onAim(this.localAim);
+        tank.turret.rotation.y = this.localAim - tank.root.rotation.y;
+      }
+      this.aimReticle.position.copy(this.aimPoint);
+    } else {
+      this.aimReticle.visible = false;
     }
   }
 
@@ -268,12 +301,16 @@ export class TankRenderer {
     const blend = 1 - Math.exp(-16 * dt);
     for (const tank of this.tanks.values()) {
       const player = tank.player;
+      const local = player.id === this.playerId;
       const distance = Math.hypot(tank.root.position.x - player.x, tank.root.position.z - player.z);
-      const amount = distance > 12 ? 1 : blend;
+      // Show the latest authoritative local position with less additional render delay.
+      const amount = distance > 12 ? 1 : local ? 1 - Math.exp(-28 * dt) : blend;
       tank.root.position.x = THREE.MathUtils.lerp(tank.root.position.x, player.x, amount);
       tank.root.position.z = THREE.MathUtils.lerp(tank.root.position.z, player.z, amount);
       tank.root.rotation.y = lerpAngle(tank.root.rotation.y, player.angle, amount);
-      tank.turret.rotation.y = lerpAngle(tank.turret.rotation.y, player.turret - tank.root.rotation.y, 1 - Math.exp(-24 * dt));
+      tank.turret.rotation.y = local && this.localAim !== undefined
+        ? this.localAim - tank.root.rotation.y
+        : lerpAngle(tank.turret.rotation.y, player.turret - tank.root.rotation.y, 1 - Math.exp(-24 * dt));
       tank.damageFlash = Math.max(0, tank.damageFlash - dt);
       for (const material of tank.armorMaterials) {
         material.emissive.setHex(tank.damageFlash > 0 ? 0xff381b : 0x000000);
@@ -310,10 +347,14 @@ export class TankRenderer {
     const own = this.tanks.get(this.playerId);
     if (own) {
       this.cameraTarget.set(clamp(own.root.position.x, -33, 33), 0, clamp(own.root.position.z, -25, 25));
-      this.focus.lerp(this.cameraTarget, 1 - Math.exp(-5 * dt));
+      if (this.snapCamera) this.focus.copy(this.cameraTarget);
+      else this.focus.lerp(this.cameraTarget, 1 - Math.exp(-10 * dt));
+      this.zoom = this.snapCamera ? this.targetZoom : THREE.MathUtils.lerp(this.zoom, this.targetZoom, 1 - Math.exp(-12 * dt));
       const portraitFactor = this.camera.aspect < 1 ? 1.32 : 1;
-      this.desiredCamera.set(this.focus.x, 34 * portraitFactor, this.focus.z + 27 * portraitFactor);
-      this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-4 * dt));
+      const distance = portraitFactor * this.zoom;
+      // One smoothing stage keeps the view level and avoids the old elastic lag.
+      this.camera.position.set(this.focus.x, 34 * distance, this.focus.z + 27 * distance);
+      this.snapCamera = false;
     } else if (this.preview) {
       this.focus.lerp(this.previewTarget, 1 - Math.exp(-3 * dt));
       const portraitFactor = this.camera.aspect < 1 ? 1.25 : 1;
@@ -352,6 +393,29 @@ export class TankRenderer {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     return mesh;
+  }
+
+  private buildReticle(): void {
+    const outline = new THREE.MeshBasicMaterial({ color: 0x162b2d, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
+    const highlight = new THREE.MeshBasicMaterial({ color: 0xffe4a1, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
+    this.materials.add(outline);
+    this.materials.add(highlight);
+    const shadowRing = new THREE.Mesh(this.geometry('aim-outline', () => new THREE.RingGeometry(0.37, 0.59, 32)), outline);
+    const ring = new THREE.Mesh(this.geometry('aim-ring', () => new THREE.RingGeometry(0.44, 0.5, 32)), highlight);
+    shadowRing.rotation.x = ring.rotation.x = -Math.PI / 2;
+    shadowRing.renderOrder = 100;
+    ring.renderOrder = 101;
+    this.aimReticle.add(shadowRing, ring);
+    for (const side of [-1, 1]) {
+      const horizontal = new THREE.Mesh(this.box(0.32, 0.025, 0.07), highlight);
+      const vertical = new THREE.Mesh(this.box(0.07, 0.025, 0.32), highlight);
+      horizontal.position.x = side * 0.73;
+      vertical.position.z = side * 0.73;
+      horizontal.renderOrder = vertical.renderOrder = 101;
+      this.aimReticle.add(horizontal, vertical);
+    }
+    this.aimReticle.visible = false;
+    this.scene.add(this.aimReticle);
   }
 
   private buildArena(): void {

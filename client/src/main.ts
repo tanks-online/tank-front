@@ -13,6 +13,7 @@ if (!stored || typeof stored !== 'object') stored = {};
 let tank: TankKind = ['scout','medium','heavy'].includes(String(stored.tank)) ? stored.tank as TankKind : 'medium';
 let sound = stored.sound !== false;
 let quality: 'low' | 'high' = stored.quality === 'low' ? 'low' : 'high';
+let controls: 'directional' | 'classic' = stored.controls === 'classic' ? 'classic' : 'directional';
 let inviteRoom = new URLSearchParams(location.search).get('room')?.toUpperCase() || '';
 if (!/^[A-Z0-9]{6}$/.test(inviteRoom)) inviteRoom = '';
 let connection: Connection | undefined, battle: TankRenderer | undefined;
@@ -21,13 +22,17 @@ let state: GameState | undefined, lastState: GameState | undefined, entryRevisio
 const keys = new Set<string>();
 let audio: AudioContext | undefined;
 let toastTimer: ReturnType<typeof setTimeout>;
+let damageTimer: ReturnType<typeof setTimeout>;
+const cooldown: Record<TankKind, number> = { scout: 0.35, medium: 0.6, heavy: 1 };
+const actionCodes = new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','ShiftLeft','ShiftRight']);
 
 el<HTMLInputElement>('nickname').value = typeof stored.name === 'string' ? stored.name.slice(0, 16) : 'Танкист';
 el<HTMLInputElement>('sound').checked = sound;
 el<HTMLSelectElement>('quality').value = quality;
 el<HTMLSelectElement>('tank-select').value = tank;
+el<HTMLSelectElement>('controls').value = controls;
 el('tank-info').textContent = specs[tank];
-function save(): void { try { localStorage.setItem('tank-front-preferences', JSON.stringify({ name: el<HTMLInputElement>('nickname').value, tank, sound, quality })); } catch { /* private browsing */ } }
+function save(): void { try { localStorage.setItem('tank-front-preferences', JSON.stringify({ name: el<HTMLInputElement>('nickname').value, tank, sound, quality, controls })); } catch { /* private browsing */ } }
 function toast(text: string): void { el('toast').textContent = text; el('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => el('toast').hidden = true, 5500); }
 function tone(freq: number, duration: number, volume = 0.05): void {
   if (!sound || !audio || audio.state !== 'running') return;
@@ -58,7 +63,7 @@ async function startGame(): Promise<void> {
   try {
     const { TankRenderer } = await import('./renderer');
     if (!inGame || revision !== entryRevision) return;
-    battle = new TankRenderer(el('battle-scene'), angle => aim = angle, pressed => firing = pressed); battle.setQuality(quality);
+    battle = new TankRenderer(el('battle-scene'), angle => aim = angle, pressed => { firing = pressed; sendInput(); }); battle.setQuality(quality);
   }
   catch { leaveGame(); toast('Для 3D-игры нужен WebGL 2. Обновите браузер и включите аппаратное ускорение.'); return; }
   connection = new Connection({ name: nickname, tank, ...(inviteRoom ? { room: inviteRoom } : { quickPlay: true }) }, {
@@ -66,7 +71,7 @@ async function startGame(): Promise<void> {
     welcome: session => { playerId = session.playerId; room = session.room; el('room-label').textContent = `КОМНАТА ${room}`; const url = new URL(location.href); url.search = ''; url.searchParams.set('room', room); history.replaceState({}, '', url); },
     state: onState,
     error: (message, code) => { toast(message); if (!['RATE_LIMIT','RESTART_UNAVAILABLE'].includes(code)) { leaveGame(); el('play-note').textContent = message; } },
-    ping: ms => el('ping').textContent = `${ms} мс`,
+    ping: ms => { el('ping').textContent = `${ms} мс`; el('ping').classList.toggle('high-latency', ms > 180); },
   });
 }
 el('play').addEventListener('click', startGame);
@@ -93,7 +98,13 @@ function onState(snapshot: GameState): void {
     el('health-bar').style.width = `${Math.max(0, mine.hp / mine.maxHp * 100)}%`; el('health-bar').classList.toggle('critical', mine.hp / mine.maxHp < 0.3);
     el('kill-count').textContent = String(mine.kills); el('respawn').hidden = mine.alive || snapshot.phase !== 'playing';
     el('respawn').textContent = `Танк уничтожен · Возрождение через ${Math.ceil(mine.respawnIn)} с`;
-    const previous = lastState?.players.find(p => p.id === playerId); if (previous && mine.hp < previous.hp) tone(90, 0.22, 0.09);
+    const reloading = Math.max(0, mine.reloadIn ?? 0);
+    el('reload-label').textContent = !mine.alive ? 'ТАНК УНИЧТОЖЕН' : reloading > 0 ? `ПЕРЕЗАРЯДКА ${reloading.toFixed(1)} с` : 'ОРУДИЕ ГОТОВО';
+    el('reload-bar').style.width = `${mine.alive ? Math.max(0, Math.min(1, 1 - reloading / cooldown[mine.tank])) * 100 : 0}%`;
+    el('reload-track').classList.toggle('ready', mine.alive && reloading === 0);
+    const previous = lastState?.players.find(p => p.id === playerId);
+    if (previous && mine.hp < previous.hp) { tone(90, 0.22, 0.09); el('damage-flash').classList.add('active'); clearTimeout(damageTimer); damageTimer = setTimeout(() => el('damage-flash').classList.remove('active'), 300); }
+    if (previous && mine.kills > previous.kills) toast('Цель уничтожена · +1');
   }
   if (lastState && snapshot.shells.some(s => !lastState!.shells.some(old => old.id === s.id))) tone(160, 0.1, 0.04);
   scoreRows(el('scores'), snapshot); el('results').hidden = snapshot.phase !== 'ended';
@@ -119,20 +130,34 @@ async function copyInvite(): Promise<void> {
   catch { const input = document.createElement('input'); input.value = url.toString(); input.readOnly = true; el('game-status').replaceChildren(document.createTextNode('Скопируйте ссылку: '), input); input.focus(); input.select(); }
 }
 ['invite','invite-center'].forEach(id => el(id).addEventListener('click', () => void copyInvite()));
-function clearInput(): void { keys.clear(); firing = false; connection?.send({ type: 'input', seq: ++seq, forward: 0, turn: 0, aim, fire: false }); }
+function clearInput(): void { keys.clear(); firing = false; document.querySelector('.scoreboard')?.classList.remove('expanded'); connection?.send({ type: 'input', seq: ++seq, forward: 0, turn: 0, aim, fire: false }); }
+function sendInput(): void {
+  if (!inGame || !state || document.hidden || el<HTMLDialogElement>('settings').open || state.phase === 'ended') return;
+  const down = (...codes: string[]) => codes.some(code => keys.has(code)) ? 1 : 0;
+  const horizontal = down('KeyD','ArrowRight') - down('KeyA','ArrowLeft');
+  const vertical = down('KeyS','ArrowDown') - down('KeyW','ArrowUp');
+  const power = down('ShiftLeft','ShiftRight') ? 0.45 : 1;
+  connection?.send({ type: 'input', seq: ++seq,
+    forward: controls === 'classic' ? -vertical * power : 0,
+    turn: controls === 'classic' ? -horizontal : 0,
+    ...(controls === 'directional' ? { moveX: horizontal * power, moveZ: vertical * power } : {}),
+    aim, fire: firing || !!down('Space'),
+  });
+}
 window.addEventListener('keydown', event => {
   if (!inGame || el<HTMLDialogElement>('settings').open) return;
-  if (['KeyW','KeyA','KeyS','KeyD','Tab'].includes(event.code)) { event.preventDefault(); keys.add(event.code); }
+  if (actionCodes.has(event.code) || event.code === 'Tab') { event.preventDefault(); if (!event.repeat) { keys.add(event.code); sendInput(); } }
   if (event.code === 'Tab') document.querySelector('.scoreboard')?.classList.add('expanded');
   if (event.code === 'Escape') { clearInput(); el<HTMLDialogElement>('settings').showModal(); }
 });
-window.addEventListener('keyup', event => { keys.delete(event.code); if (event.code === 'Tab') document.querySelector('.scoreboard')?.classList.remove('expanded'); });
+window.addEventListener('keyup', event => { if (keys.delete(event.code)) sendInput(); if (event.code === 'Tab') document.querySelector('.scoreboard')?.classList.remove('expanded'); });
 window.addEventListener('blur', clearInput); document.addEventListener('visibilitychange', () => { if (document.hidden) clearInput(); });
-setInterval(() => { if (!inGame || !state || document.hidden || el<HTMLDialogElement>('settings').open) return; connection?.send({ type: 'input', seq: ++seq, forward: Number(keys.has('KeyW')) - Number(keys.has('KeyS')), turn: Number(keys.has('KeyA')) - Number(keys.has('KeyD')), aim, fire: firing }); }, 50);
+setInterval(sendInput, 50);
 ['settings-open','game-settings'].forEach(id => el(id).addEventListener('click', () => { clearInput(); el<HTMLDialogElement>('settings').showModal(); }));
 el('settings-close').addEventListener('click', () => el<HTMLDialogElement>('settings').close());
 el('sound').addEventListener('change', () => { sound = el<HTMLInputElement>('sound').checked; save(); unlockAudio(); tone(400, 0.1); });
 el('quality').addEventListener('change', () => { quality = el<HTMLSelectElement>('quality').value as 'low'|'high'; battle?.setQuality(quality); save(); });
+el('controls').addEventListener('change', () => { clearInput(); controls = el<HTMLSelectElement>('controls').value as 'directional'|'classic'; save(); });
 el('tank-select').addEventListener('change', () => { tank = el<HTMLSelectElement>('tank-select').value as TankKind; el('tank-info').textContent = specs[tank]; save(); });
 window.addEventListener('pagehide', () => { connection?.close(); battle?.destroy(); });
 window.addEventListener('pageshow', event => {

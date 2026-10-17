@@ -15,6 +15,8 @@ export interface PlayerState {
   alive: boolean;
   respawnIn: number;
   connected: boolean;
+  /** Authoritative time until the next shot; optional for older deployed servers. */
+  reloadIn?: number;
 }
 
 export interface ObstacleState { x: number; z: number; w: number; d: number; h: number }
