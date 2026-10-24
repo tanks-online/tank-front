@@ -21,5 +21,5 @@ jobs:
       - run: npm run setup
       - run: npm test
       - run: npm run build:hosted
-# Check the same client/server build used by Render and the Enzonic runtime.
-# Publication instructions and verified addresses are in docs/TWO-HOSTS.md.
+# Check the same client/server build used by Render, including mobile input tests.
+# Publication instructions and verified address are in docs/DEPLOY.md.
