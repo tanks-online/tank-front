@@ -28,8 +28,10 @@ function validName(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0 && [...value.trim()].length <= 16 && !/[\x00-\x1f\x7f]/.test(value);
 }
 function validInput(value: Record<string, unknown>): value is Record<string, unknown> & Input {
+  const directional = Object.hasOwn(value, 'moveX') || Object.hasOwn(value, 'moveZ');
   return Number.isSafeInteger(value.seq) && (value.seq as number) >= 0 &&
     ['forward', 'turn'].every(k => typeof value[k] === 'number' && Number.isFinite(value[k]) && Math.abs(value[k] as number) <= 1) &&
+    (!directional || ['moveX', 'moveZ'].every(k => typeof value[k] === 'number' && Number.isFinite(value[k]) && Math.abs(value[k] as number) <= 1)) &&
     typeof value.aim === 'number' && Number.isFinite(value.aim) && Math.abs(value.aim) <= 1_000_000 && typeof value.fire === 'boolean';
 }
 function rejectUpgrade(socket: NodeJS.WritableStream & { destroy(): void }, code: number, reason: string): void {

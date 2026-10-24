@@ -1,6 +1,10 @@
 import { OBSTACLES, TANKS, WORLD, circleHitsBox, segmentBox, segmentCircle, type Phase, type Point, type TankType } from './world.js';
 
-export interface Input { seq: number; forward: number; turn: number; aim: number; fire: boolean }
+export interface Input {
+  seq: number; forward: number; turn: number; aim: number; fire: boolean;
+  // Optional world-space direction. Both fields must be supplied together.
+  moveX?: number; moveZ?: number;
+}
 export interface Player {
   id: string; name: string; tank: TankType; x: number; z: number; angle: number; turret: number;
   hp: number; maxHp: number; kills: number; deaths: number; alive: boolean; connected: boolean;
@@ -16,6 +20,7 @@ const DEFAULT_SPAWNS: Point[] = [
   { x: -12, z: -28 }, { x: 12, z: 28 }, { x: -37, z: -4 }, { x: 37, z: 4 },
 ];
 const normalizeAngle = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
+const DIRECTION_TURN_SPEED: Record<TankType, number> = { scout: 4.8, medium: 3.8, heavy: 2.8 };
 // Quantize only the wire representation; the simulation retains full precision.
 const wirePosition = (value: number) => Math.round(value * 100) / 100;
 const wireAngle = (value: number) => Math.round(value * 1_000) / 1_000;
@@ -147,8 +152,9 @@ export class Game {
     this.lastNow = now;
     this.tick++;
     if (this.phase === 'waiting' && this.connectedCount() >= 2) this.begin(now);
-    if (this.phase !== 'playing') return;
-    if (now - this.startedAt >= this.duration) {
+    // One human can practice while waiting; only a real round advances its timer.
+    if (this.phase === 'ended') return;
+    if (this.phase === 'playing' && now - this.startedAt >= this.duration) {
       this.phase = 'ended';
       this.shells.clear();
       for (const p of this.players.values()) p.input = { ...ZERO_INPUT, aim: p.turret };
@@ -163,9 +169,32 @@ export class Game {
       }
       if (now - player.lastInputAt > 250) continue;
       const input = player.input;
-      player.angle = normalizeAngle(player.angle + input.turn * 2.5 * dt);
+      let drive = input.forward;
+      if (input.moveX !== undefined && input.moveZ !== undefined) {
+        const magnitude = Math.hypot(input.moveX, input.moveZ);
+        drive = 0;
+        if (magnitude > 0) {
+          let desired = Math.atan2(input.moveX, input.moveZ);
+          let difference = normalizeAngle(desired - player.angle);
+          let direction = 1;
+          // Reverse into directions behind the hull instead of making a 180-degree turn.
+          if (Math.abs(difference) > Math.PI / 2) {
+            desired = normalizeAngle(desired + Math.PI);
+            difference = normalizeAngle(desired - player.angle);
+            direction = -1;
+          }
+          const turnStep = DIRECTION_TURN_SPEED[player.tank] * dt;
+          player.angle = normalizeAngle(player.angle + Math.max(-turnStep, Math.min(turnStep, difference)));
+          // The chassis still drives along its tracks. Turning cannot become instant strafing,
+          // and a diagonal key combination cannot exceed the class's normal speed.
+          const alignment = Math.max(0, Math.cos(normalizeAngle(desired - player.angle)));
+          drive = direction * Math.min(1, magnitude) * alignment;
+        }
+      } else {
+        player.angle = normalizeAngle(player.angle + input.turn * 2.5 * dt);
+      }
       player.turret = normalizeAngle(input.aim);
-      const distance = input.forward * TANKS[player.tank].speed * dt;
+      const distance = drive * TANKS[player.tank].speed * dt;
       const nextX = player.x + Math.sin(player.angle) * distance;
       const nextZ = player.z + Math.cos(player.angle) * distance;
       if (this.canMove(player, nextX, player.z)) player.x = nextX;
@@ -225,6 +254,7 @@ export class Game {
         id: p.id, name: p.name, tank: p.tank, x: wirePosition(p.x), z: wirePosition(p.z), angle: wireAngle(p.angle), turret: wireAngle(p.turret),
         hp: p.hp, maxHp: p.maxHp, kills: p.kills, deaths: p.deaths, alive: p.alive,
         respawnIn: p.alive ? 0 : wirePosition(Math.max(0, (p.respawnAt - now) / 1_000)), connected: p.connected,
+        reloadIn: wirePosition(Math.max(0, (p.lastShotAt + TANKS[p.tank].cooldown - now) / 1_000)),
       })),
       shells: [...this.shells.values()].map(s => ({ id: s.id, x: wirePosition(s.x), z: wirePosition(s.z) })),
       obstacles: OBSTACLES,
