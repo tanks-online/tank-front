@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 
-const { values } = parseArgs({ options: { server: { type: 'string' }, origin: { type: 'string' }, full: { type: 'boolean', default: false } } });
+const { values } = parseArgs({ options: { server: { type: 'string' }, origin: { type: 'string' }, full: { type: 'boolean', default: false }, directional: { type: 'boolean', default: false } } });
 if (!values.server || !values.origin) {
   console.error('Usage: npm run verify:remote -- --server https://SERVICE.onrender.com --origin https://PROJECT.pages.dev [--full]');
   process.exit(1);
@@ -125,7 +125,10 @@ async function navigate(peer, goal) {
       while (waypoint < path.length - 1 && distance(current, path[waypoint]) < 0.65) waypoint++;
       const next = path[waypoint], desired = Math.atan2(next.x - current.x, next.z - current.z);
       const error = Math.atan2(Math.sin(desired - current.angle), Math.cos(desired - current.angle));
-      peer.input({ forward: Math.abs(error) < 0.3 ? Math.min(1, distance(current, next) / 2) : 0, turn: clamp(error * 1.6, -1, 1), aim: desired });
+      const power = Math.min(1, distance(current, next) / 2);
+      peer.input(values.directional
+        ? { moveX: Math.sin(desired) * power, moveZ: Math.cos(desired) * power, aim: desired }
+        : { forward: Math.abs(error) < 0.3 ? power : 0, turn: clamp(error * 1.6, -1, 1), aim: desired });
       await pause(50);
     }
     const current = peer.latest.players.find(p => p.id === id);
@@ -139,6 +142,17 @@ try {
   assert.ok(Array.isArray(await request('/rooms')));
   await rejectForeignOrigin();
   const a = await player({ name: 'Проверка-А', tank: values.full ? 'heavy' : 'scout' });
+  if (values.directional) {
+    const waiting = await a.wait(x => x.type === 'state' && x.phase === 'waiting');
+    const initial = waiting.players.find(p => p.id === a.welcome.playerId);
+    assert.equal(typeof initial.reloadIn, 'number', 'Нужен обновлённый сервер с перезарядкой.');
+    const warmup = setInterval(() => a.input({ moveX: 0, moveZ: -0.45, aim: 0, fire: true }), 50); timers.add(warmup);
+    try {
+      await a.wait(x => x.type === 'state' && x.phase === 'waiting' && x.players.some(p => p.id === initial.id && p.z < initial.z - 0.2));
+      await a.wait(x => x.type === 'state' && x.phase === 'waiting' && x.players.some(p => p.id === initial.id && p.reloadIn > 0));
+    } finally { clearInterval(warmup); timers.delete(warmup); a.input(); }
+    log('PASS: экранное направление, медленный ход и стрельба в одиночной разминке, серверная перезарядка.');
+  }
   const b = await player({ name: 'Проверка-Б', tank: values.full ? 'scout' : 'medium', room: a.welcome.room });
   const snapshot = await a.wait(x => x.type === 'state' && x.phase === 'playing' && x.players.length === 2);
   await b.wait(x => x.type === 'state' && x.phase === 'playing' && x.players.length === 2);
