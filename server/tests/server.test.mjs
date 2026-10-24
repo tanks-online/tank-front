@@ -86,6 +86,36 @@ test('two clients see the same room, move, ping and resume identity without a se
   await b.close();
 });
 
+test('paired world direction is validated before it reaches authoritative movement', async t => {
+  const { app, url } = await setup(t);
+  const { peer: a, welcome } = await joined(url);
+  const { peer: b } = await joined(url, welcome.room);
+  await a.next(data => data.type === 'state' && data.phase === 'playing');
+  const player = app.rooms.get(welcome.room).game.players.get(welcome.playerId);
+  Object.assign(player, { x: -10, z: -28, angle: Math.PI / 2 });
+  const base = { type: 'input', seq: 1, forward: 0, turn: 0, aim: 0, fire: false };
+  for (const invalid of [
+    { moveX: 1 }, { moveZ: -1 }, { moveX: '1', moveZ: 0 }, { moveX: 0, moveZ: null },
+    { moveX: 1.01, moveZ: 0 }, { moveX: 0, moveZ: -1.01 }, { moveX: {}, moveZ: [] },
+  ]) {
+    a.send({ ...base, ...invalid });
+    assert.equal((await a.next(data => data.type === 'error')).code, 'BAD_MESSAGE');
+    assert.equal(player.input.seq, -1, 'invalid direction must not replace the authoritative input');
+  }
+  a.send({ ...base, seq: 2, moveX: 1, moveZ: 0 });
+  const moved = await a.next(data => data.type === 'state' && data.players.some(p => p.id === welcome.playerId && p.x > -9.99));
+  assert.equal(moved.players.find(p => p.id === welcome.playerId).z, -28);
+  assert.equal(player.input.moveX, 1);
+  assert.equal(player.input.moveZ, 0);
+  // A late packet cannot undo a newer direction, even if its values are otherwise valid.
+  a.send({ ...base, seq: 1, moveX: -1, moveZ: 0 });
+  a.send({ type: 'ping', id: 87 });
+  await a.next(data => data.type === 'pong' && data.id === 87);
+  assert.equal(player.input.seq, 2);
+  assert.equal(player.input.moveX, 1);
+  await a.close(); await b.close();
+});
+
 test('a full room and unknown room return clear protocol errors', async t => {
   const { url } = await setup(t, { roomCapacity: 2 });
   const { peer: a, welcome } = await joined(url);

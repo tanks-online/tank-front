@@ -27,6 +27,29 @@ test('a round requires two humans; tank statistics and public state match the co
   assert.deepEqual(TANKS.medium, { hp: 110, speed: 7, damage: 30, cooldown: 600 });
 });
 
+test('a lone player can practice movement and shooting before the second player starts a fresh round', () => {
+  const game = new Game('ABC234', { matchDurationMs: 1_000 });
+  const player = game.addPlayer('a', 'Альфа', 'scout', 0);
+  Object.assign(player, { x: -10, z: -28, angle: 0, hp: 30, kills: 7, deaths: 2 });
+  game.setInput('a', input(1, { moveX: 0, moveZ: 1, fire: true }), 5_000);
+  game.step(5_000, 0.1);
+  assert.equal(game.phase, 'waiting');
+  assert.equal(game.remaining(), 1, 'waiting does not consume the match timer');
+  assert.equal(player.z, -27, 'the lone player can drive around the arena');
+  assert.equal(game.shells.size, 1, 'the lone player can fire');
+  game.addPlayer('b', 'Браво', 'medium', 5_050);
+  game.step(5_050);
+  assert.equal(game.phase, 'playing');
+  assert.equal(game.startedAt, 5_050);
+  assert.equal(game.remaining(), 1);
+  assert.equal(player.hp, player.maxHp);
+  assert.equal(player.kills, 0);
+  assert.equal(player.deaths, 0);
+  assert.equal(player.input.fire, false, 'a warm-up trigger cannot fire into the new round');
+  assert.equal(game.shells.size, 0, 'warm-up shells cannot enter the match');
+  assert.equal(game.snapshot().players.find(p => p.id === 'a').reloadIn, 0);
+});
+
 test('movement is authoritative, collides with walls, buildings and tanks, and stale input stops', () => {
   const game = twoPlayers();
   const a = game.players.get('a'), b = game.players.get('b');
@@ -54,6 +77,59 @@ test('movement is authoritative, collides with walls, buildings and tanks, and s
   assert.equal(a.z, -28);
 });
 
+test('world direction gives immediate forward and reverse movement and explicit zero releases the controls', () => {
+  const game = twoPlayers();
+  const player = game.players.get('a');
+  Object.assign(player, { x: -10, z: -28, angle: 0 });
+  game.setInput('a', input(1, { moveX: 0, moveZ: -1 }), 100);
+  game.step(100, 0.1);
+  assert.equal(player.z, -28.5, 'screen-up uses reverse when the hull points toward screen-down');
+  assert.ok(Math.abs(player.angle) < 1e-12, 'reversing does not require a half turn');
+  game.setInput('a', input(2, { moveX: 0, moveZ: 1 }), 150);
+  game.step(150, 0.1);
+  assert.equal(player.z, -28);
+  game.setInput('a', input(3, { moveX: 0, moveZ: 0, forward: 1, turn: 1 }), 200);
+  game.step(200, 0.1);
+  assert.equal(player.z, -28);
+  assert.ok(Math.abs(player.angle) < 1e-12, 'world-space zero overrides the legacy controls');
+  game.setInput('a', input(4, { forward: 1 }), 250);
+  game.step(250, 0.1);
+  assert.equal(player.z, -27.5, 'the same session can switch back to classic control packets');
+});
+
+test('directional steering turns each class at a bounded rate while turret aim stays independent', () => {
+  for (const [tank, turnSpeed] of [['scout', 4.8], ['medium', 3.8], ['heavy', 2.8]]) {
+    const game = twoPlayers();
+    const player = game.players.get('a');
+    Object.assign(player, { tank, x: -10, z: -28, angle: 0 });
+    game.setInput('a', input(1, { moveX: 1, moveZ: 0, aim: -1.2 }), 100);
+    game.step(100, 0.1);
+    assert.ok(Math.abs(player.angle - turnSpeed * 0.1) < 1e-12, `${tank} has a finite steering rate`);
+    assert.ok(player.x > -10 && player.z > -28, 'movement follows the turning tracks rather than instantly strafing');
+    assert.ok(Math.abs(player.turret + 1.2) < 1e-12);
+    const position = { x: player.x, z: player.z, angle: player.angle };
+    game.step(500, 0.1);
+    assert.deepEqual({ x: player.x, z: player.z, angle: player.angle }, position, 'stale directional commands also stop');
+  }
+});
+
+test('diagonal world movement cannot exceed class speed and still respects buildings', () => {
+  const game = twoPlayers();
+  const player = game.players.get('a');
+  Object.assign(player, { x: -10, z: -28, angle: Math.PI / 4 });
+  game.setInput('a', input(1, { moveX: 1, moveZ: 1 }), 100);
+  game.step(100, 0.1);
+  assert.ok(Math.abs(Math.hypot(player.x + 10, player.z + 28) - TANKS.heavy.speed * 0.1) < 1e-12);
+  Object.assign(player, { x: 0, z: -24.5, angle: 0 });
+  game.setInput('a', input(2, { moveX: 0, moveZ: 1 }), 150);
+  game.step(150, 0.1);
+  assert.equal(player.z, -24.5, 'world input cannot drive through the central building');
+  Object.assign(player, { x: -10, z: -28, angle: Math.PI / 2 });
+  game.setInput('a', input(3, { moveX: 0.45, moveZ: 0 }), 200);
+  game.step(200, 0.1);
+  assert.ok(Math.abs(player.x + 10 - TANKS.heavy.speed * 0.45 * 0.1) < 1e-12, 'analog input preserves slow movement');
+});
+
 test('shots use class cooldown and swept damage; kills, respawn, timed results and restart work', () => {
   const game = twoPlayers({ respawnMs: 150, matchDurationMs: 3_000 });
   const a = game.players.get('a'), b = game.players.get('b');
@@ -62,6 +138,9 @@ test('shots use class cooldown and swept damage; kills, respawn, timed results a
   game.setInput('a', input(1, { fire: true }), 100);
   game.step(100);
   assert.equal(game.shells.size, 1);
+  assert.equal(game.snapshot(100).players.find(p => p.id === 'a').reloadIn, 1);
+  assert.equal(game.snapshot(600).players.find(p => p.id === 'a').reloadIn, 0.5);
+  assert.equal(game.snapshot(1_200).players.find(p => p.id === 'a').reloadIn, 0);
   game.setInput('a', input(2, { fire: true }), 150);
   game.step(150);
   assert.equal(game.shells.size, 1, 'holding fire does not bypass the heavy cooldown');
