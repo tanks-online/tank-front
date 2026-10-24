@@ -9,7 +9,7 @@
     "build": "npm --prefix server run build && npm --prefix client run build",
     "build:hosted": "node scripts/build-hosted.mjs",
     "start": "npm --prefix server start",
-    "test": "npm --prefix server test && npm --prefix client run check",
+    "test": "npm --prefix server test && npm --prefix client run check && npm --prefix client test",
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
     "verify:remote": "node scripts/verify-remote.mjs"
