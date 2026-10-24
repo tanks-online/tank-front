@@ -1,7 +1,7 @@
 # One free service. No disks, databases, paid instances, or extra workers.
 services:
   - type: web
-    name: tank-front-server
+    name: tank-front
     runtime: node
     plan: free
     buildCommand: npm run setup && npm run build:hosted
