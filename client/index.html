@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#172325" />
   <meta name="description" content="Танковые онлайн-бои для 2–8 игроков. Введите ник и играйте с друзьями. Без регистрации и ботов." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -10,7 +10,27 @@
 </head>
 <body>
   <div id="app">
-    <section id="lobby" class="simple-lobby">
+    <section id="device-screen" class="device-screen">
+      <main class="device-card">
+        <div class="menu-icon" aria-hidden="true">ТФ</div>
+        <span class="eyebrow">ТАНКОВЫЙ ФРОНТ · ОНЛАЙН</span>
+        <h1>На чём играем?</h1>
+        <p class="device-intro">Выбери удобное управление.<br>Арена для всех одна.</p>
+        <div class="device-options">
+          <button id="device-phone" class="device-option">
+            <svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="19" y="7" width="26" height="50" rx="5" stroke="currentColor" stroke-width="3"/><path d="M27 13h10M30 50h4" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="27" cy="32" r="5" stroke="currentColor" stroke-width="2"/><path d="M38 29v6M35 32h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <strong>Телефон</strong><span>Два экранных джойстика</span><small>Горизонтальный экран ↻</small>
+          </button>
+          <button id="device-pc" class="device-option">
+            <svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="7" y="10" width="50" height="33" rx="3" stroke="currentColor" stroke-width="3"/><path d="M25 44v8m14-8v8M18 54h28M8 36h48" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="m28 20 10 6-5 2-2 5-3-13Z" fill="currentColor"/></svg>
+            <strong>Компьютер</strong><span>Клавиатура и мышь</span><small>WASD · прицел · выстрел</small>
+          </button>
+        </div>
+        <p class="device-crossplay"><span aria-hidden="true">↔</span> Играй с друзьями с телефона и ПК в одной комнате.</p>
+        <p class="menu-footnote">Без регистрации. Выбор можно поменять в настройках.</p>
+      </main>
+    </section>
+    <section id="lobby" class="simple-lobby" hidden>
       <main class="menu-card">
         <div class="menu-icon" aria-hidden="true">ТФ</div>
         <span class="eyebrow">ОНЛАЙН-АРЕНА · 2–8 ИГРОКОВ</span>
@@ -22,21 +42,28 @@
         <button id="cancel-invite" class="text-button" hidden>Играть в другой комнате</button>
         <p id="play-note" class="menu-note" role="status">Автоматически найдём комнату. Бой начнётся от двух игроков.</p>
         <button id="settings-open" class="text-button menu-settings">⚙ Настройки и выбор танка</button>
-        <div class="menu-controls"><span><kbd>WASD</kbd> движение</span><span><kbd>МЫШЬ</kbd> прицел</span><span><kbd>ЛКМ</kbd> огонь</span></div>
+        <button id="device-change" class="text-button device-change">↔ Сменить устройство</button>
+        <div class="menu-controls pc-rules"><span><kbd>WASD</kbd> движение</span><span><kbd>МЫШЬ</kbd> прицел</span><span><kbd>ЛКМ</kbd> огонь</span></div>
+        <div class="menu-controls phone-rules"><span>◉ Слева — движение</span><span>⊕ Справа — прицел и огонь</span></div>
         <p class="menu-footnote">Только настоящие игроки. Без регистрации и ботов.</p>
       </main>
     </section>
     <section id="game" hidden>
       <div id="battle-scene"></div><div id="damage-flash" aria-hidden="true"></div>
-      <header class="game-top"><div class="game-brand"><b>ТФ</b><span>ПЕСЧАНОЕ ДЕПО<br><small id="room-label"></small></span></div><div class="match-clock"><span id="phase-label">ОЖИДАНИЕ</span><b id="timer">03:00</b></div><div class="game-actions"><span id="ping">— мс</span><button id="invite" class="secondary-button">Пригласить ↗</button><button id="game-settings" class="icon-button" aria-label="Настройки">⚙</button><button id="leave" class="icon-button" aria-label="Покинуть комнату">✕</button></div></header>
+      <header class="game-top"><div class="game-brand"><b>ТФ</b><span>ПЕСЧАНОЕ ДЕПО<br><small id="room-label"></small></span></div><div class="match-clock"><span id="phase-label">ОЖИДАНИЕ</span><b id="timer">03:00</b></div><div class="game-actions"><span id="ping">— мс</span><button id="invite" class="secondary-button">Пригласить ↗</button><button id="mobile-scores" class="icon-button mobile-only" aria-label="Показать таблицу боя" aria-expanded="false">≡</button><button id="mobile-fullscreen" class="icon-button mobile-only" aria-label="На весь экран">⛶</button><button id="game-settings" class="icon-button" aria-label="Настройки">⚙</button><button id="leave" class="icon-button" aria-label="Покинуть комнату">✕</button></div></header>
       <div id="game-status" class="game-status" role="status"></div>
       <div id="waiting" class="center-banner"><span class="eyebrow">РАЗМИНКА</span><h2>Ждём второго игрока</h2><p>Уже можно ездить и стрелять. Пригласи друга — начнётся бой.</p><button id="invite-center" class="primary-button">Скопировать приглашение ↗</button></div>
       <div id="respawn" class="respawn-banner" hidden></div>
       <aside class="scoreboard"><span class="eyebrow">ТАБЛИЦА БОЯ</span><div class="score-heading"><span>ПОЗЫВНОЙ</span><span>У / С</span></div><div id="scores"></div></aside>
       <div class="hud-bottom"><div class="health-card"><span id="my-tank">БАСТИОН</span><b id="health-value">110 <small>/ 110</small></b><div class="health-track"><i id="health-bar"></i></div><span id="reload-label" class="reload-label">ОРУДИЕ ГОТОВО</span><div id="reload-track" class="reload-track ready"><i id="reload-bar"></i></div></div><div class="control-hint"><span><kbd>WASD / ↑←↓→</kbd> движение</span><span><kbd>ЛКМ / ПРОБЕЛ</kbd> огонь</span><span><kbd>SHIFT</kbd> медленно</span><span><kbd>КОЛЕСО</kbd> масштаб</span></div><div class="my-score"><b id="kill-count">0</b><span>УНИЧТОЖЕНО</span></div></div>
+      <div id="mobile-controls" hidden>
+        <div class="touch-stick touch-stick-move"><div id="move-pad" class="touch-pad" role="group" aria-label="Движение: проведите пальцем в нужную сторону"><span class="pad-axis" aria-hidden="true"></span><span id="move-knob" class="touch-knob" aria-hidden="true">◉</span></div><span class="touch-label">ДВИЖЕНИЕ</span></div>
+        <div class="touch-stick touch-stick-aim"><div id="aim-pad" class="touch-pad" role="group" aria-label="Прицел и огонь: удерживайте и направляйте палец"><span class="pad-axis" aria-hidden="true"></span><span id="aim-knob" class="touch-knob" aria-hidden="true">⊕</span></div><span class="touch-label">ПРИЦЕЛ + ОГОНЬ</span></div>
+      </div>
       <div id="results" class="modal-shade" hidden><div class="results-card"><span class="eyebrow">МАТЧ ЗАВЕРШЁН</span><h2 id="winner">Результаты боя</h2><p>Песчаное депо · Каждый за себя</p><div id="final-scores"></div><button id="restart" class="primary-button">Ещё один бой ↗</button><button id="results-leave" class="text-button">В главное меню</button></div></div>
     </section>
-    <dialog id="settings"><div class="dialog-head"><h2>Настройки</h2><button id="settings-close" class="icon-button" aria-label="Закрыть настройки">✕</button></div><label class="setting-row">Танк для следующего входа <select id="tank-select"><option value="scout">Стриж · лёгкий</option><option value="medium">Бастион · средний</option><option value="heavy">Молот · тяжёлый</option></select></label><p id="tank-info" class="subtle"></p><label class="setting-row">Управление <select id="controls"><option value="directional">WASD по экрану</option><option value="classic">Классическое · поворот корпуса</option></select></label><p class="subtle">WASD или стрелки — движение. Мышь — прицел. ЛКМ или пробел — огонь. Shift — медленный ход. Колесо — масштаб.</p><label class="setting-row">Звуки боя <input type="checkbox" id="sound" /></label><label class="setting-row">Качество графики <select id="quality"><option value="high">Высокое — с тенями</option><option value="low">Низкое — быстрее</option></select></label><p class="subtle">Ник и настройки сохраняются в этом браузере.</p></dialog>
+    <dialog id="settings"><div class="dialog-head"><h2>Настройки</h2><button id="settings-close" class="icon-button" aria-label="Закрыть настройки">✕</button></div><label class="setting-row">Устройство <select id="device-mode"><option value="pc">Компьютер</option><option value="phone">Телефон</option></select></label><label class="setting-row">Танк для следующего входа <select id="tank-select"><option value="scout">Стриж · лёгкий</option><option value="medium">Бастион · средний</option><option value="heavy">Молот · тяжёлый</option></select></label><p id="tank-info" class="subtle"></p><label class="setting-row pc-rules">Управление <select id="controls"><option value="directional">WASD по экрану</option><option value="classic">Классическое · поворот корпуса</option></select></label><p class="subtle pc-rules">WASD или стрелки — движение. Мышь — прицел. ЛКМ или пробел — огонь. Shift — медленный ход. Колесо — масштаб.</p><p class="subtle phone-rules">Левый джойстик — движение по экрану. Правый — наведение и стрельба при удержании. Можно использовать оба одновременно.</p><label class="setting-row">Звуки боя <input type="checkbox" id="sound" /></label><label class="setting-row">Качество графики <select id="quality"><option value="high">Высокое — с тенями</option><option value="low">Низкое — быстрее</option></select></label><p class="subtle">Ник и настройки сохраняются в этом браузере.</p></dialog>
+    <section id="rotate-hint" class="rotate-hint" aria-labelledby="rotate-title" hidden><div class="rotate-card"><div class="rotate-icon" aria-hidden="true">▯ <span>↻</span></div><span class="eyebrow">ТЕЛЕФОН ГОТОВ К БОЮ</span><h2 id="rotate-title">Поверни телефон</h2><p>Для арены нужен горизонтальный экран.<br>Поверни телефон на бок и держи двумя руками.</p><button id="rotate-retry" class="primary-button">На весь экран ↗</button><p class="rotate-note">Если браузер не разрешит поворот, поверни телефон вручную.</p><button id="rotate-menu" class="text-button">Вернуться в меню</button></div></section>
     <div id="toast" role="status" hidden></div>
   </div>
   <script type="module" src="/src/main.ts"></script>
