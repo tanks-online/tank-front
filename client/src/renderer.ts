@@ -58,6 +58,7 @@ export class TankRenderer {
   // Aim on the shell's flight plane so the cursor and barrel agree at every zoom.
   private readonly aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.92);
   private readonly aimReticle = new THREE.Group();
+  private readonly touchAimGuide = new THREE.Group();
   private readonly mouse = new THREE.Vector2();
   private readonly aimPoint = new THREE.Vector3();
   private readonly focus = new THREE.Vector3();
@@ -74,6 +75,8 @@ export class TankRenderer {
   private lastFrame = 0;
   private elapsed = 0;
   private pointerPresent = false;
+  private touchMode = false;
+  private touchAim?: number;
   private localAim?: number;
   private zoom = 1;
   private targetZoom = 1;
@@ -122,6 +125,7 @@ export class TankRenderer {
     this.renderer.domElement.addEventListener('contextmenu', this.contextMenu);
     this.renderer.domElement.addEventListener('wheel', this.wheel, { passive: false });
     window.addEventListener('pointerup', this.pointerUp);
+    window.addEventListener('pointercancel', this.pointerUp);
     window.addEventListener('blur', this.pointerUp);
     this.raf = requestAnimationFrame(this.frame);
   }
@@ -129,7 +133,10 @@ export class TankRenderer {
   update(state: GameState, playerId: string): void {
     const changedIdentity = this.playerId !== playerId;
     if (changedIdentity) {
-      this.localAim = undefined;
+      // Keep a stick gesture made while the first connection was opening, but
+      // never carry the previous tank's aim into another room or identity.
+      if (this.playerId) this.touchAim = undefined;
+      this.localAim = this.touchMode ? this.touchAim : undefined;
       this.snapCamera = Boolean(playerId);
     }
     this.playerId = playerId;
@@ -220,6 +227,25 @@ export class TankRenderer {
     this.resize();
   }
 
+  setTouchMode(enabled: boolean): void {
+    if (this.touchMode === enabled) return;
+    this.onFire(false);
+    this.touchMode = enabled;
+    this.pointerPresent = false;
+    this.localAim = enabled ? this.touchAim : undefined;
+    this.renderer.domElement.style.cursor = enabled ? 'default' : 'crosshair';
+    this.updateAim();
+  }
+
+  /** Update the local barrel immediately; the controller sends the action. */
+  setTouchAim(angle: number): void {
+    if (!Number.isFinite(angle)) return;
+    this.touchAim = Math.atan2(Math.sin(angle), Math.cos(angle));
+    if (!this.touchMode) return;
+    this.localAim = this.touchAim;
+    this.updateAim();
+  }
+
   destroy(): void {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
@@ -230,6 +256,7 @@ export class TankRenderer {
     this.renderer.domElement.removeEventListener('contextmenu', this.contextMenu);
     this.renderer.domElement.removeEventListener('wheel', this.wheel);
     window.removeEventListener('pointerup', this.pointerUp);
+    window.removeEventListener('pointercancel', this.pointerUp);
     window.removeEventListener('blur', this.pointerUp);
     this.onFire(false);
     for (const geometry of this.geometries.values()) geometry.dispose();
@@ -250,22 +277,28 @@ export class TankRenderer {
   };
 
   private readonly pointerMove = (event: PointerEvent): void => {
+    if (this.touchMode || event.pointerType === 'touch') return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     this.pointerPresent = true;
     this.updateAim();
   };
   private readonly pointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0 || !this.state) return;
+    if (this.touchMode || event.pointerType === 'touch' || event.button !== 0 || !this.state) return;
     this.pointerMove(event);
     this.onFire(true);
     event.preventDefault();
   };
-  private readonly pointerUp = (): void => { this.onFire(false); };
-  private readonly pointerLeave = (): void => { this.pointerPresent = false; this.aimReticle.visible = false; this.onFire(false); };
+  private readonly pointerUp = (): void => { if (!this.touchMode) this.onFire(false); };
+  private readonly pointerLeave = (): void => {
+    if (this.touchMode) return;
+    this.pointerPresent = false;
+    this.aimReticle.visible = false;
+    this.onFire(false);
+  };
   private readonly contextMenu = (event: Event): void => { event.preventDefault(); };
   private readonly wheel = (event: WheelEvent): void => {
-    if (!this.playerId || !this.state) return;
+    if (this.touchMode || !this.playerId || !this.state) return;
     event.preventDefault();
     const units = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.container.clientHeight : 1;
     const delta = clamp(event.deltaY * units, -140, 140);
@@ -274,8 +307,20 @@ export class TankRenderer {
 
   private updateAim(): void {
     const tank = this.tanks.get(this.playerId);
-    this.aimReticle.visible = Boolean(this.pointerPresent && tank?.player.alive && this.state?.phase !== 'ended');
+    this.aimReticle.visible = Boolean((this.touchMode || this.pointerPresent) && tank?.player.alive && this.state?.phase !== 'ended');
+    this.touchAimGuide.visible = this.touchMode && this.aimReticle.visible;
     if (!this.aimReticle.visible || !tank) return;
+    if (this.touchMode) {
+      const angle = this.localAim ?? tank.player.turret;
+      this.localAim = angle;
+      const dx = Math.sin(angle);
+      const dz = Math.cos(angle);
+      this.aimReticle.position.set(tank.root.position.x + dx * 12, 0.92, tank.root.position.z + dz * 12);
+      this.touchAimGuide.position.set(tank.root.position.x, 0.92, tank.root.position.z);
+      this.touchAimGuide.rotation.y = angle;
+      tank.turret.rotation.y = angle - tank.root.rotation.y;
+      return;
+    }
     this.camera.updateMatrixWorld();
     this.raycaster.setFromCamera(this.mouse, this.camera);
     if (this.raycaster.ray.intersectPlane(this.aimPlane, this.aimPoint)) {
@@ -416,6 +461,18 @@ export class TankRenderer {
     }
     this.aimReticle.visible = false;
     this.scene.add(this.aimReticle);
+    const guideMaterial = new THREE.MeshBasicMaterial({ color: 0xffe4a1, transparent: true, opacity: 0.34, depthTest: false, depthWrite: false });
+    this.materials.add(guideMaterial);
+    // Dashes make the firing direction readable without hiding the battlefield.
+    const dashGeometry = this.box(0.055, 0.025, 0.5);
+    for (let z = 2.8; z <= 10.8; z += 1.2) {
+      const dash = new THREE.Mesh(dashGeometry, guideMaterial);
+      dash.position.z = z;
+      dash.renderOrder = 99;
+      this.touchAimGuide.add(dash);
+    }
+    this.touchAimGuide.visible = false;
+    this.scene.add(this.touchAimGuide);
   }
 
   private buildArena(): void {
