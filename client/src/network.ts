@@ -109,7 +109,15 @@ export class Connection {
     }, 2000);
   }
 
-  send(data: unknown): void { if (this.ready && this.ws?.readyState === WebSocket.OPEN && this.ws.bufferedAmount < 32768) this.ws.send(JSON.stringify(data)); }
+  send(data: unknown): void {
+    if (!this.ready || this.ws?.readyState !== WebSocket.OPEN) return;
+    // Input describes the current controls: a queued history becomes stale and
+    // can arrive as a burst after a slow connection recovers. The next 20 Hz
+    // update supplies the latest controls once the socket has drained.
+    const input = record(data) && data.type === 'input';
+    if (input ? this.ws.bufferedAmount !== 0 : this.ws.bufferedAmount >= 32768) return;
+    this.ws.send(JSON.stringify(data));
+  }
   private fail(message: string, code: string): void { this.close(); this.cb.error(message, code); }
   close(): void { this.stopped = true; this.ready = false; clearTimeout(this.reconnectTimer); clearInterval(this.watchdog); this.pendingPing.clear(); this.ws?.close(1000, 'Leaving'); }
 }
